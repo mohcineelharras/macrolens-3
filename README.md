@@ -1,50 +1,40 @@
-# Welcome to your Expo app 👋
+# MacroLens
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Expo nutrition app. Meal photos are analyzed by a local or hosted server. The Gemini API key stays in that server's environment and is never written into the client.
 
-## Get started
-
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Setup
 
 ```bash
-npm run reset-project
+npm ci
+cp .env.example .env
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Put `GEMINI_API_KEY` in `.env` for the server process only. Do not prefix it with `EXPO_PUBLIC_` and do not paste it into source files.
 
-## Learn more
+## Run
 
-To learn more about developing your project with Expo, look at the following resources:
+Terminal 1, analysis server (loopback only unless you also set `ANALYZE_API_TOKEN`):
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```bash
+npm run server
+```
 
-## Join the community
+Terminal 2, app:
 
-Join our community of developers creating universal apps.
+```bash
+npx expo start
+```
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+`EXPO_PUBLIC_API_BASE_URL` is the server origin, for example `http://127.0.0.1:8787`. Android emulators can use `http://10.0.2.2:8787` while the server stays on `127.0.0.1`. A physical device needs an adb reverse or an authenticated host. Do not put `ANALYZE_API_TOKEN` in the app.
+
+The scan screen asks before a photo is uploaded. Photos are resized on device and are not stored in the food log.
+
+## Checks
+
+```bash
+npm run check:secrets
+npm run lint
+npm run typecheck
+npm test
+npm run audit:critical
+```
