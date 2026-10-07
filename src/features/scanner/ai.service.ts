@@ -1,45 +1,70 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { normalizeJpegBase64, sanitizeEstimate, type FoodEstimate } from "../nutrition/estimate";
 
-// Initialize Gemini (In real app, use Env Var)
-// WARNING: Do not commit real keys. User must provide key.
-const genAI = new GoogleGenerativeAI("YOUR_GEMINI_API_KEY");
+const REQUEST_TIMEOUT_MS = 25_000;
+const MAX_RESPONSE_CHARS = 4_000;
 
-export const analyzeFoodImage = async (base64Image: string): Promise<any> => {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+export class AnalysisUnavailableError extends Error {
+  constructor() {
+    super("Analysis service is not configured.");
+    this.name = "AnalysisUnavailableError";
+  }
+}
 
-    const prompt = `
-    Analyze this food image. Identify the dish and estimate the portion size.
-    Return ONLY a valid JSON object with this structure:
-    {
-      "name": "Dish Name",
-      "calories": 0,
-      "protein": 0,
-      "carbs": 0,
-      "fat": 0,
-      "confidence": 0.95
+export class AnalysisFailedError extends Error {
+  constructor() {
+    super("Analysis failed.");
+    this.name = "AnalysisFailedError";
+  }
+}
+
+export async function analyzeFoodImage(base64Image: string): Promise<FoodEstimate | null> {
+  const image = normalizeJpegBase64(base64Image);
+  if (!image) return null;
+
+  const endpoint = analysisEndpoint(process.env.EXPO_PUBLIC_API_BASE_URL);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ imageBase64: image }),
+      signal: controller.signal,
+    });
+    if (response.status === 401 || response.status === 403) {
+      throw new AnalysisFailedError();
     }
-    If no food is detected, return null.
-    Do not use markdown blocks. Just raw JSON.
-  `;
+    if (!response.ok) throw new AnalysisFailedError();
+    const declaredLength = Number(response.headers.get("content-length") ?? "0");
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_CHARS) return null;
+    const text = await response.text();
+    if (text.length > MAX_RESPONSE_CHARS) return null;
+    const body = JSON.parse(text) as unknown;
+    if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+    const estimate = (body as { estimate?: unknown }).estimate;
+    if (estimate === null) return null;
+    return sanitizeEstimate(estimate);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
-    try {
-        const result = await model.generateContent([
-            prompt,
-            {
-                inlineData: {
-                    data: base64Image,
-                    mimeType: "image/jpeg",
-                },
-            },
-        ]);
-        const response = await result.response;
-        const text = response.text();
-
-        // Cleanup markdown if present
-        const cleanedText = text.replace(/```json/g, '').replace(/```/g, '').trim();
-        return JSON.parse(cleanedText);
-    } catch (error) {
-        console.error("AI Error:", error);
-        return null;
-    }
-};
+function analysisEndpoint(rawBase: string | undefined): URL {
+  const base = rawBase?.trim() ?? "";
+  if (!/^https?:\/\//i.test(base)) {
+    throw new AnalysisUnavailableError();
+  }
+  let endpoint: URL;
+  try {
+    endpoint = new URL("analyze", base.endsWith("/") ? base : `${base}/`);
+  } catch {
+    throw new AnalysisUnavailableError();
+  }
+  if (endpoint.username || endpoint.password || (endpoint.protocol !== "http:" && endpoint.protocol !== "https:")) {
+    throw new AnalysisUnavailableError();
+  }
+  return endpoint;
+}
